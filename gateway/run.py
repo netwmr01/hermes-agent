@@ -18805,6 +18805,22 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     from hermes_logging import setup_logging
     setup_logging(hermes_home=_hermes_home, mode="gateway")
 
+    # ── Rate-limit status log ───────────────────────────────────────────
+    # Lazy import to avoid a hard dependency at module-load time (the
+    # rate_limit package is internal and may not be present on all Hermes
+    # installations yet).
+    try:
+        from rate_limit.leaky_bucket import get_default_bucket
+        _rl_bucket = get_default_bucket()
+        print(
+            f"[rate_limit] Initialized: capacity={_rl_bucket.capacity}, "
+            f"refill_rate={_rl_bucket.refill_rate} tokens/sec",
+            flush=True,
+        )
+    except Exception as _rl_ex:
+        logger.debug("Could not initialise rate-limit bucket: %s", _rl_ex)
+    # ──────────────────────────────────────────────────────────────────
+
     # Periodic process memory usage logging (gateway only) — emits a
     # grep-friendly "[MEMORY] rss=...MB ..." line every N minutes so
     # slow leaks in the long-lived gateway process show up as a time

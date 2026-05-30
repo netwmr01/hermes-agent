@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from rate_limit.leaky_bucket import get_default_bucket
 from gateway.whatsapp_identity import (
     expand_whatsapp_aliases,
     normalize_whatsapp_identifier,
@@ -208,6 +209,7 @@ class PairingStore:
         Generate a pairing code for a new user.
 
         Returns the code string, or None if:
+          - Global token bucket is exhausted (rate limit)
           - User is rate-limited (too recent request)
           - Max pending codes reached for this platform
           - User/platform is in lockout due to failed attempts
@@ -215,6 +217,15 @@ class PairingStore:
         The code is NOT stored in plaintext.  Only a salted SHA-256 hash is
         persisted so that reading the pending file does not reveal codes.
         """
+        # ── Global token-bucket rate limit ─────────────────────────────
+        # Protects the backend from overall request flood.
+        # Bucket: 30 capacity / 0.5 tokens-sec ≈ 30 req/min steady-state.
+        bucket = get_default_bucket()
+        if not bucket.consume():
+            print(f"[pairing] Rate limit exceeded for platform={platform}, user={user_id}", flush=True)
+            return None
+        # ───────────────────────────────────────────────────────────────
+
         with self._lock:
             self._cleanup_expired(platform)
             normalized_user_id = self._normalize_user_id(platform, user_id)

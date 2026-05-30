@@ -1508,8 +1508,8 @@ def run_conversation(
                             "failed": True  # Mark as failure for filtering
                         }
                     
-                    # Backoff before retry — jittered exponential: 5s base, 120s cap
-                    wait_time = jittered_backoff(retry_count, base_delay=5.0, max_delay=120.0)
+                    # Backoff before retry — jittered exponential: 60s base, 120s cap
+                    wait_time = jittered_backoff(retry_count, base_delay=60.0, max_delay=120.0)
                     agent._buffer_vprint(f"⏳ Retrying in {wait_time:.1f}s ({_failure_hint})...")
                     logger.warning(f"Invalid API response (retry {retry_count}/{max_retries}): {', '.join(error_details)} | Provider: {provider_name}")
                     
@@ -2678,35 +2678,26 @@ def run_conversation(
                     # is exhausted or didn't help.
 
                 # Eager fallback for rate-limit errors (429 or quota exhaustion).
-                # When a fallback model is configured, switch immediately instead
-                # of burning through retries with exponential backoff -- the
-                # primary provider won't recover within the retry window.
+                # When a fallback model is configured and credential pool rotation
+                # can't help, switch immediately instead of burning through retries.
+                # When no pool exists, let the retry cycle handle it with backoff
+                # (60s, 120s) — the user configured these delays explicitly — and
+                # fallback fires naturally on exhaustion (line 2902+).
                 is_rate_limited = classified.reason in {
                     FailoverReason.rate_limit,
                     FailoverReason.billing,
                 }
                 if is_rate_limited and agent._fallback_index < len(agent._fallback_chain):
-                    # Don't eagerly fallback if credential pool rotation may
-                    # still recover.  See _pool_may_recover_from_rate_limit
-                    # for the single-credential-pool and CloudCode-quota
-                    # exceptions.  Fixes #11314 and #13636.
                     pool_may_recover = _ra()._pool_may_recover_from_rate_limit(
                         agent._credential_pool,
                         provider=agent.provider,
                         base_url=getattr(agent, "base_url", None),
                     )
-                    if not pool_may_recover:
-                        if classified.reason == FailoverReason.billing:
-                            agent._buffer_status(
-                                "⚠️ Billing or credits exhausted — switching to fallback provider..."
-                            )
-                        else:
-                            agent._buffer_status("⚠️ Rate limited — switching to fallback provider...")
-                        if agent._try_activate_fallback(reason=classified.reason):
-                            retry_count = 0
-                            compression_attempts = 0
-                            primary_recovery_attempted = False
-                            continue
+                    if pool_may_recover:
+                        # Credential pool can still rotate — let the retry
+                        # cycle handle it.  The pool's internal rotation logic
+                        # swaps credentials across attempts.
+                        pass
 
                 # ── Nous Portal: record rate limit & skip retries ─────
                 # When Nous returns a 429 that is a genuine account-
@@ -3344,7 +3335,7 @@ def run_conversation(
                                 _retry_after = min(float(_ra_raw), 120)  # Cap at 2 minutes
                             except (TypeError, ValueError):
                                 pass
-                wait_time = _retry_after if _retry_after else jittered_backoff(retry_count, base_delay=2.0, max_delay=60.0)
+                wait_time = _retry_after if _retry_after else jittered_backoff(retry_count, base_delay=60.0, max_delay=120.0)
                 if is_rate_limited:
                     agent._buffer_status(f"⏱️ Rate limited. Waiting {wait_time:.1f}s (attempt {retry_count + 1}/{max_retries})...")
                 else:
