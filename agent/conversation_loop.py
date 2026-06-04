@@ -2687,18 +2687,6 @@ def run_conversation(
                     FailoverReason.rate_limit,
                     FailoverReason.billing,
                 }
-                if is_rate_limited and agent._fallback_index < len(agent._fallback_chain):
-                    pool_may_recover = _ra()._pool_may_recover_from_rate_limit(
-                        agent._credential_pool,
-                        provider=agent.provider,
-                        base_url=getattr(agent, "base_url", None),
-                    )
-                    if pool_may_recover:
-                        # Credential pool can still rotate — let the retry
-                        # cycle handle it.  The pool's internal rotation logic
-                        # swaps credentials across attempts.
-                        pass
-
                 # ── Nous Portal: record rate limit & skip retries ─────
                 # When Nous returns a 429 that is a genuine account-
                 # level rate limit, record the reset time to a shared
