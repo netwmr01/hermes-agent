@@ -3810,6 +3810,7 @@ class HermesCLI:
             bg_proc_count = snapshot.get("active_background_processes", 0)
             if bg_proc_count:
                 parts.append(f"⚙ {bg_proc_count}")
+            parts.append(f"req {snapshot['session_api_calls']}")
             parts.append(duration_label)
             prompt_elapsed = snapshot.get("prompt_elapsed")
             if prompt_elapsed:
@@ -3906,6 +3907,8 @@ class HermesCLI:
                     if bg_proc_count:
                         frags.append(("class:status-bar-dim", " │ "))
                         frags.append(("class:status-bar-strong", f"⚙ {bg_proc_count}"))
+                    frags.append(("class:status-bar-dim", " │ "))
+                    frags.append(("class:status-bar-dim", f"req {snapshot['session_api_calls']}"))
                     frags.extend([
                         ("class:status-bar-dim", " │ "),
                         ("class:status-bar-dim", duration_label),

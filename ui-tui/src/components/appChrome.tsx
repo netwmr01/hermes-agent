@@ -382,6 +382,12 @@ export function StatusRule({
             </Text>
           </Text>
         ) : null}
+        {typeof usage.calls === 'number' ? (
+          <Text color={t.color.muted} wrap="truncate-end">
+            {' │ req '}
+            {usage.calls}
+          </Text>
+        ) : null}
         <SpawnHud t={t} />
         {voiceLabel ? (
           <Text
