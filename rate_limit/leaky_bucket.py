@@ -4,14 +4,19 @@ Token Bucket Rate Limiter
 Implements a thread-safe token bucket algorithm for rate limiting.
 Supports both time-driven refill and manual token addition.
 """
-import time
 import threading
+import time
+import warnings
 from typing import Optional
 
 
 class TokenBucket:
     """
     A thread-safe token bucket rate limiter.
+
+    .. deprecated::
+        Direct instantiation of ``TokenBucket`` is deprecated.
+        Use ``agent.rate_control.FileSyncedTokenBucket`` for new code.
 
     The bucket refills at a constant rate (refill_rate tokens per second).
     Tokens are consumed when requests arrive. If insufficient tokens are
@@ -30,6 +35,11 @@ class TokenBucket:
             capacity: Maximum number of tokens (burst capacity).
             refill_rate: Token refill rate in tokens per second.
         """
+        warnings.warn(
+            "TokenBucket is deprecated; use agent.rate_control.FileSyncedTokenBucket",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.capacity = capacity
         self.refill_rate = refill_rate
         self._tokens = capacity
@@ -114,34 +124,18 @@ class TokenBucket:
                 time.sleep(0.1)
 
 
-# ── Module-level singleton ─────────────────────────────────────────────────
-
-# Hardcoded limits for the global backend-protection bucket.
-#   capacity  = 30 tokens  (allow 30 burst requests)
-#   refill_rate = 0.5 tokens/sec  (= 30 tokens/min steady-state)
-# This enforces a ceiling of ~30 requests/minute to external backends.
-_RATE_LIMIT_CAPACITY = 30.0
-_RATE_LIMIT_REFILL_RATE = 0.5  # tokens per second  →  30/min
-
-_default_bucket: Optional[TokenBucket] = None
-_default_bucket_lock = threading.Lock()
-
-
-def get_default_bucket() -> TokenBucket:
+def get_default_bucket():
     """
-    Return the module-level singleton TokenBucket.
+    Return the module-level singleton token bucket.
 
-    Thread-safe on first creation. All subsequent calls return the same
-    instance, so token state (available count, refill headroom) is shared
-    across every call site that uses ``get_default_bucket()``.
+    .. deprecated::
+        Use ``agent.rate_control.get_global_bucket()`` instead.
     """
-    global _default_bucket
-    if _default_bucket is None:
-        with _default_bucket_lock:
-            # Double-check inside the lock
-            if _default_bucket is None:
-                _default_bucket = TokenBucket(
-                    capacity=_RATE_LIMIT_CAPACITY,
-                    refill_rate=_RATE_LIMIT_REFILL_RATE,
-                )
-    return _default_bucket
+    warnings.warn(
+        "get_default_bucket is deprecated; use agent.rate_control.get_global_bucket",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    from agent.rate_control import get_global_bucket
+
+    return get_global_bucket()

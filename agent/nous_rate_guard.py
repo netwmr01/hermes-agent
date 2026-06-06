@@ -18,6 +18,8 @@ import os
 import tempfile
 import time
 from typing import Any, Mapping, Optional
+
+from filelock import FileLock
 from utils import atomic_replace
 
 logger = logging.getLogger(__name__)
@@ -114,19 +116,21 @@ def record_nous_rate_limit(
             "reset_seconds": reset_at - now,
         }
 
-        # Atomic write: write to temp file + rename
-        fd, tmp_path = tempfile.mkstemp(dir=state_dir, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(state, f)
-            atomic_replace(tmp_path, path)
-        except Exception:
-            # Clean up temp file on failure
+        # Atomic write: write to temp file + rename, protected by filelock
+        lock = FileLock(path + ".lock")
+        with lock:
+            fd, tmp_path = tempfile.mkstemp(dir=state_dir, suffix=".tmp")
             try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+                with os.fdopen(fd, "w") as f:
+                    json.dump(state, f)
+                atomic_replace(tmp_path, path)
+            except Exception:
+                # Clean up temp file on failure
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
 
         logger.info(
             "Nous rate limit recorded: resets in %.0fs (at %.0f)",
@@ -144,17 +148,19 @@ def nous_rate_limit_remaining() -> Optional[float]:
     """
     path = _state_path()
     try:
-        with open(path, encoding="utf-8") as f:
-            state = json.load(f)
-        reset_at = state.get("reset_at", 0)
-        remaining = reset_at - time.time()
-        if remaining > 0:
-            return remaining
-        # Expired — clean up
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
+        lock = FileLock(path + ".lock")
+        with lock:
+            with open(path, encoding="utf-8") as f:
+                state = json.load(f)
+            reset_at = state.get("reset_at", 0)
+            remaining = reset_at - time.time()
+            if remaining > 0:
+                return remaining
+            # Expired — clean up
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
         return None
     except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
         return None
@@ -162,12 +168,15 @@ def nous_rate_limit_remaining() -> Optional[float]:
 
 def clear_nous_rate_limit() -> None:
     """Clear the rate limit state (e.g., after a successful Nous request)."""
-    try:
-        os.unlink(_state_path())
-    except FileNotFoundError:
-        pass
-    except OSError as exc:
-        logger.debug("Failed to clear Nous rate limit state: %s", exc)
+    path = _state_path()
+    lock = FileLock(path + ".lock")
+    with lock:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.debug("Failed to clear Nous rate limit state: %s", exc)
 
 
 def format_remaining(seconds: float) -> str:

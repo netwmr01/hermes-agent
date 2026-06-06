@@ -100,6 +100,7 @@ class _OpenAIProxy:
 OpenAI = _OpenAIProxy()  # module-level name, resolves lazily on call/isinstance
 
 from agent.credential_pool import load_pool
+from agent.rate_control import gate_api_call
 from hermes_cli.config import get_hermes_home
 from hermes_constants import OPENROUTER_BASE_URL
 from utils import base_url_host_matches, base_url_hostname, normalize_proxy_env_vars
@@ -2816,6 +2817,7 @@ def _try_payment_fallback(
             continue
         client, model = try_fn()
         if client is not None:
+            client = gate_api_call(client)
             logger.info(
                 "Auxiliary %s: %s on %s — falling back to %s (%s)",
                 task or "call", reason, failed_provider, label, model or "default",
@@ -2871,6 +2873,7 @@ def _try_main_agent_model_fallback(
     if client is None:
         return None, None, ""
 
+    client = gate_api_call(client)
     label = f"main-agent({main_provider})"
     logger.info(
         "Auxiliary %s: %s on %s — falling back to main agent model %s (%s)",
@@ -2923,6 +2926,7 @@ def _try_configured_fallback_chain(
             fb_client = None
 
         if fb_client is not None:
+            fb_client = gate_api_call(fb_client)
             logger.info(
                 "Auxiliary %s: %s on %s — configured fallback to %s (%s)",
                 task, reason, failed_provider, label, fb_model or "default",
@@ -3954,6 +3958,7 @@ def resolve_vision_provider_client(
         if sync_client is None:
             return resolved_provider, None, None
         final_model = resolved_model or default_model
+        sync_client = gate_api_call(sync_client)
         if async_mode:
             async_client, async_model = _to_async_client(sync_client, final_model, is_vision=True)
             return resolved_provider, async_client, async_model
@@ -4437,6 +4442,8 @@ def _get_cached_client(
         is_vision=is_vision,
     )
     if client is not None:
+        # Wrap with rate-controlled client before caching.
+        client = gate_api_call(client)
         # For async clients, remember which loop they were created on so we
         # can detect stale entries later.
         bound_loop = current_loop

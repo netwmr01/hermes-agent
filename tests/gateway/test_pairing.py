@@ -26,6 +26,34 @@ def _make_store(tmp_path):
         return PairingStore()
 
 
+class TestPairingGlobalBucket:
+    """Verify pairing code generation respects the global bucket after T7 migration."""
+
+    def test_pairing_respects_global_bucket_after_migration(self, tmp_path):
+        """After migrating from get_default_bucket to get_global_bucket,
+        pairing.generate_code should still be gated by the global token bucket."""
+        from agent.rate_control import FileSyncedTokenBucket
+
+        state_file = tmp_path / "global_bucket.json"
+        bucket = FileSyncedTokenBucket(
+            capacity=2, refill_rate=0.01, state_file=state_file
+        )
+        # Consume all tokens from the global bucket
+        assert bucket.consume(tokens=2) is True
+
+        with patch("gateway.pairing.PAIRING_DIR", tmp_path):
+            with patch("gateway.pairing.get_global_bucket", return_value=bucket):
+                store = PairingStore()
+                # First call should fail because bucket is empty
+                code = store.generate_code("telegram", "user1")
+                assert code is None
+
+                # Add a token back
+                bucket.add_tokens(1)
+                code = store.generate_code("telegram", "user2")
+                assert isinstance(code, str) and len(code) == CODE_LENGTH
+
+
 # ---------------------------------------------------------------------------
 # _secure_write
 # ---------------------------------------------------------------------------

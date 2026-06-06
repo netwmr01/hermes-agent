@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from rate_limit.leaky_bucket import get_default_bucket
+from agent.rate_control import get_global_bucket
 from gateway.whatsapp_identity import (
     expand_whatsapp_aliases,
     normalize_whatsapp_identifier,
@@ -220,7 +220,7 @@ class PairingStore:
         # ── Global token-bucket rate limit ─────────────────────────────
         # Protects the backend from overall request flood.
         # Bucket: 30 capacity / 0.5 tokens-sec ≈ 30 req/min steady-state.
-        bucket = get_default_bucket()
+        bucket = get_global_bucket()
         if not bucket.consume():
             print(f"[pairing] Rate limit exceeded for platform={platform}, user={user_id}", flush=True)
             return None

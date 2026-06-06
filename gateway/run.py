@@ -18810,11 +18810,13 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     # rate_limit package is internal and may not be present on all Hermes
     # installations yet).
     try:
-        from rate_limit.leaky_bucket import get_default_bucket
-        _rl_bucket = get_default_bucket()
+        from agent.rate_control import get_global_bucket
+        _rl_bucket = get_global_bucket()
+        from hermes_cli.config import load_config_readonly
+        _rl_cfg = load_config_readonly().get("rate_limit", {})
         print(
-            f"[rate_limit] Initialized: capacity={_rl_bucket.capacity}, "
-            f"refill_rate={_rl_bucket.refill_rate} tokens/sec",
+            f"[rate_limit] Initialized: bucket_cap={_rl_cfg.get('bucket_cap', 30)}, "
+            f"rpm={_rl_cfg.get('rpm', 30)}",
             flush=True,
         )
     except Exception as _rl_ex:

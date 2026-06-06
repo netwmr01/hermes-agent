@@ -3320,7 +3320,7 @@ def run_conversation(
                         _ra_raw = _resp_headers.get("retry-after") or _resp_headers.get("Retry-After")
                         if _ra_raw:
                             try:
-                                _retry_after = min(float(_ra_raw), 120)  # Cap at 2 minutes
+                                _retry_after = min(float(_ra_raw), 600)  # Sanity cap at 10 minutes; RateControlledClient enforces proactive waits, so this is a secondary safety net.
                             except (TypeError, ValueError):
                                 pass
                 wait_time = _retry_after if _retry_after else jittered_backoff(retry_count, base_delay=60.0, max_delay=120.0)

@@ -1441,6 +1441,32 @@ class TestTryPaymentFallback:
         assert label == ""
 
 
+class TestCallLlmWrapsClient:
+    """Test that call_llm wraps the resolved client with RateControlledClient."""
+
+    def test_call_llm_wraps_client_with_rate_control(self):
+        """call_llm() should return a client that was wrapped via gate_api_call."""
+        wrapped_client = MagicMock()
+        wrapped_client.chat.completions.create.return_value = {"choices": []}
+        wrapped_client.base_url = "https://api.example.com"
+
+        with (
+            patch("agent.auxiliary_client._resolve_task_provider_model",
+                  return_value=("openrouter", "gpt-4", None, None, None)),
+            patch("agent.auxiliary_client._get_cached_client",
+                  return_value=(wrapped_client, "gpt-4")),
+            patch("agent.auxiliary_client._validate_llm_response",
+                  side_effect=lambda resp, _task: resp),
+        ):
+            result = call_llm(
+                task="compression",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+        wrapped_client.chat.completions.create.assert_called_once()
+        assert result == {"choices": []}
+
+
 class TestCallLlmPaymentFallback:
     """call_llm() retries with a different provider on 402 / payment / rate-limit errors."""
 

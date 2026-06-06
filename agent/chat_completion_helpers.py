@@ -33,6 +33,7 @@ from agent.message_sanitization import (
     _sanitize_surrogates,
     _repair_tool_call_arguments,
 )
+from agent.rate_control import RateControlledClient, get_global_bucket
 from tools.terminal_tool import is_persistent_env
 from utils import base_url_host_matches, base_url_hostname
 
@@ -226,6 +227,9 @@ def interruptible_api_call(agent, api_kwargs: dict):
                         reason="chat_completion_request",
                         api_kwargs=api_kwargs,
                     )
+                )
+                request_client = RateControlledClient(
+                    request_client, bucket=get_global_bucket()
                 )
                 result["response"] = request_client.chat.completions.create(**api_kwargs)
         except Exception as e:
@@ -1427,7 +1431,9 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                 _summary_result = _tsum.normalize_response(summary_response, strip_tool_prefix=agent._is_anthropic_oauth)
                 final_response = (_summary_result.content or "").strip()
             else:
-                summary_response = agent._ensure_primary_openai_client(reason="iteration_limit_summary").chat.completions.create(**summary_kwargs)
+                _summary_client = agent._ensure_primary_openai_client(reason="iteration_limit_summary")
+                _summary_client = RateControlledClient(_summary_client, bucket=get_global_bucket())
+                summary_response = _summary_client.chat.completions.create(**summary_kwargs)
                 _summary_result = agent._get_transport().normalize_response(summary_response)
                 final_response = (_summary_result.content or "").strip()
 
@@ -1470,7 +1476,9 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                 if summary_extra_body:
                     summary_kwargs["extra_body"] = summary_extra_body
 
-                summary_response = agent._ensure_primary_openai_client(reason="iteration_limit_summary_retry").chat.completions.create(**summary_kwargs)
+                _retry_client = agent._ensure_primary_openai_client(reason="iteration_limit_summary_retry")
+                _retry_client = RateControlledClient(_retry_client, bucket=get_global_bucket())
+                summary_response = _retry_client.chat.completions.create(**summary_kwargs)
                 _retry_result = agent._get_transport().normalize_response(summary_response)
                 final_response = (_retry_result.content or "").strip()
 
@@ -1717,6 +1725,9 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 reason="chat_completion_stream_request",
                 api_kwargs=stream_kwargs,
             )
+        )
+        request_client = RateControlledClient(
+            request_client, bucket=get_global_bucket()
         )
         # Reset stale-stream timer so the detector measures from this
         # attempt's start, not a previous attempt's last chunk.
